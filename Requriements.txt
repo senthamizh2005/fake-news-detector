@@ -1,0 +1,12 @@
+pandas
+scikit-learn
+gradio
+matplotlib
+seaborn
+joblib
+pandas
+scikit-learn
+gradio
+transformers
+tensorflow
+pip install -r requirements.txt
