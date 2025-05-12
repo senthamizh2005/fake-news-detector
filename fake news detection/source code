@@ -1,0 +1,106 @@
+# Fake News Detection Project (BERT-Based, Follows Template Style)
+
+# Step 1: Upload Dataset
+from google.colab import files
+uploaded = files.upload()
+
+# Step 2: Load Dataset
+import pandas as pd
+
+df = pd.read_csv("fake_or_real_news.csv")
+df.head()
+
+# Step 3: Data Exploration
+print("Shape:", df.shape)
+print("Columns:", df.columns.tolist())
+print(df.info())
+print(df['label'].value_counts())
+
+# Step 4: Check Missing & Duplicate Values
+print("Missing values:\n", df.isnull().sum())
+print("Duplicate rows:", df.duplicated().sum())
+
+# Step 5: Visualize Class Distribution
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.countplot(data=df, x='label')
+plt.title('Fake vs Real News Count')
+plt.show()
+
+# Step 6: Preprocess Text
+import re
+
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r"https?://\S+|www\.\S+", "", text)
+    text = re.sub(r"[^a-zA-Z ]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+# Apply cleaning
+df['text'] = df['text'].apply(clean_text)
+
+# Step 7: Convert Labels
+df['label'] = df['label'].map({'FAKE': 1, 'REAL': 0})
+
+# Step 8: Split Data
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(df['text'], df['label'], test_size=0.2, random_state=42)
+
+# Step 9: Use BERT Tokenizer and Model
+!pip install transformers --quiet
+from transformers import BertTokenizer, TFBertForSequenceClassification
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import SparseCategoricalCrossentropy
+from tensorflow.keras.metrics import SparseCategoricalAccuracy
+from tensorflow.keras.callbacks import EarlyStopping
+import tensorflow as tf
+
+# Load pre-trained tokenizer and model
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+model = TFBertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=2)
+
+# Tokenize
+train_encodings = tokenizer(list(X_train), truncation=True, padding=True, max_length=512, return_tensors="tf")
+test_encodings = tokenizer(list(X_test), truncation=True, padding=True, max_length=512, return_tensors="tf")
+
+# Create TensorFlow datasets
+train_dataset = tf.data.Dataset.from_tensor_slices((dict(train_encodings), y_train)).batch(16)
+test_dataset = tf.data.Dataset.from_tensor_slices((dict(test_encodings), y_test)).batch(16)
+
+# Compile Model
+model.compile(
+    optimizer=Adam(learning_rate=2e-5),
+    loss=SparseCategoricalCrossentropy(from_logits=True),
+    metrics=[SparseCategoricalAccuracy()]
+)
+
+# Train
+model.fit(train_dataset, epochs=3, validation_data=test_dataset, callbacks=[EarlyStopping(patience=1)])
+
+# Evaluate
+model.evaluate(test_dataset)
+
+# Step 10: Predict from New Input
+def predict_news(text):
+    cleaned = clean_text(text)
+    inputs = tokenizer(cleaned, return_tensors="tf", truncation=True, padding=True, max_length=512)
+    outputs = model(inputs)[0]
+    probs = tf.nn.softmax(outputs, axis=1).numpy()[0]
+    pred = probs.argmax()
+    label = "FAKE" if pred == 1 else "REAL"
+    return f"Prediction: {label} (Confidence: {probs[pred]:.2%})"
+
+# Step 11: Gradio Interface
+!pip install gradio --quiet
+import gradio as gr
+
+gr.Interface(
+    fn=predict_news,
+    inputs=gr.Textbox(lines=10, label="Enter News Article Text"),
+    outputs=gr.Textbox(label="Prediction Result"),
+    title="📰 Fake News Detection with BERT",
+    description="Paste a news article below to check if it's REAL or FAKE using a BERT-based NLP model."
+).launch()
